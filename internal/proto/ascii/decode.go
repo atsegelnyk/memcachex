@@ -19,7 +19,6 @@ var (
 
 var (
 	NotStoredResp = []byte("NOT_STORED\r\n")
-	DeletedResp   = []byte("DELETED\r\n")
 	NotFoundResp  = []byte("NOT_FOUND\r\n")
 )
 

@@ -1,12 +1,18 @@
 package ascii
 
+import "github.com/atsegelnyk/memcachex/internal/pool"
+
+var (
+	versionRequest = []byte("version\r\n")
+)
+
 func EncodeGet(key []byte) []byte {
-	ln := 4 + len(key)
-	b := make([]byte, ln+2)
+	need := 4 + len(key)
+	b := pool.BufferPool.GetFor(need + 2)
 
 	b[0], b[1], b[2], b[3] = 'g', 'e', 't', ' '
 	copy(b[4:], key)
-	b[ln], b[ln+1] = '\r', '\n'
+	b[need], b[need+1] = '\r', '\n'
 	return b
 }
 
@@ -17,7 +23,7 @@ func EncodeGetMulti(keys [][]byte) []byte {
 	}
 	need += len(keys) - 1 // spaces
 
-	b := make([]byte, need)
+	b := pool.BufferPool.GetFor(need)
 	b[0], b[1], b[2], b[3] = 'g', 'e', 't', ' '
 
 	off := 4
@@ -37,7 +43,7 @@ func EncodeSet(key []byte, flags uint32, exptime uint32, value []byte) []byte {
 	// "set " + key + " " + flags + " " + exptime + " " + bytes + "\r\n" + value + "\r\n"
 	need := len(key) + len(value) + 41
 
-	b := make([]byte, need)
+	b := pool.BufferPool.GetFor(need)
 
 	b[0], b[1], b[2], b[3] = 's', 'e', 't', ' '
 	off := 4
@@ -68,17 +74,17 @@ func EncodeSet(key []byte, flags uint32, exptime uint32, value []byte) []byte {
 }
 
 func EncodeDelete(key []byte) []byte {
-	ln := 7 + len(key)
-	b := make([]byte, ln+2)
+	need := 7 + len(key)
+	b := pool.BufferPool.GetFor(need + 2)
 
 	b[0], b[1], b[2], b[3], b[4], b[5], b[6] = 'd', 'e', 'l', 'e', 't', 'e', ' '
 	copy(b[7:], key)
-	b[ln], b[ln+1] = '\r', '\n'
+	b[need], b[need+1] = '\r', '\n'
 	return b
 }
 
 func EncodeVersion() []byte {
-	return []byte("version\r\n")
+	return versionRequest
 }
 
 func putU32(dst []byte, v uint32) int {

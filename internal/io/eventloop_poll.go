@@ -13,15 +13,13 @@ import (
 )
 
 const (
-	maxIOBatch             = 128
-	defaultPollTimeoutMs   = 50
-	defaultRequestRingSize = 8192
-	//defaultRequestRingSize = 262144
+	defaultPollTimeoutMs = 50
 )
 
 var (
 	WakeupData       = []byte{1}
 	ErrNoOpenSockets = errors.New("no open sockets available")
+	ErrEmptyRing     = errors.New("empty ring")
 )
 
 type eventFD struct {
@@ -47,6 +45,7 @@ func newEventFD() (*eventFD, error) {
 type eventLoop struct {
 	id            int
 	pollTimeoutMs int
+	maxIOBatch    int
 	lockOSThread  bool
 
 	ready bool
@@ -63,7 +62,7 @@ type eventLoop struct {
 	onSocketErrorHook func(int, error)
 }
 
-func newEventLoop(id int, lockOSThread bool, onError, onSocketError func(int, error)) (*eventLoop, error) {
+func newEventLoop(id, ringSize int, lockOSThread bool, onError, onSocketError func(int, error)) (*eventLoop, error) {
 	efd, err := newEventFD()
 	if err != nil {
 		return nil, err
@@ -82,7 +81,8 @@ func newEventLoop(id int, lockOSThread bool, onError, onSocketError func(int, er
 		lockOSThread:      lockOSThread,
 		mu:                sync.Mutex{},
 		pollTimeoutMs:     defaultPollTimeoutMs,
-		requestRing:       ring.NewMPSC[*types.Req](defaultRequestRingSize),
+		maxIOBatch:        ringSize,
+		requestRing:       ring.NewMPSC[*types.Req](ringSize),
 		onErrorHook:       onError,
 		onSocketErrorHook: onSocketError,
 	}, nil
@@ -225,22 +225,29 @@ func (e *eventLoop) onEvent(re int16, s *socket, sIdx int) {
 }
 
 func (e *eventLoop) dispatchRequests(s *socket) {
-	for i := 0; i < maxIOBatch; i++ {
-		rq, ok := e.requestRing.Pop()
+	for i := 0; i < e.maxIOBatch; i++ {
+		// socket inflight ring full, backoff.
+		if !s.inflightRing.CanPush() {
+			return
+		}
+
+		// try to peek from requestRing, then try to write to the socket.
+		// if succeeds, discard peeked object from request ring, and push to socket's inflight ring.
+		rq, ok := e.requestRing.Peek()
 		if !ok {
-			break
+			return
 		}
 
 		ok = s.write(rq.Raw)
 		if !ok {
-			fmt.Println("took but not written")
-			break
+			return
 		}
 
-		ok = s.inflightRing.Push(rq)
-		if !ok {
-			break
-		}
+		// return request buffer to bufferPool
+		pool.BufferPool.Put(rq.Raw)
+
+		_ = e.requestRing.Discard()
+		s.inflightRing.Push(rq)
 	}
 }
 
@@ -251,7 +258,7 @@ func (e *eventLoop) onWriteable(s *socket) error {
 func (e *eventLoop) onReadable(s *socket) (err error) {
 	err = s.read()
 
-	for i := 0; i < maxIOBatch; i++ {
+	for i := 0; i < e.maxIOBatch; i++ {
 		n := ascii.DecodeResponseLen(s.readBuffer[s.rpos:s.readOffset])
 		if n == 0 {
 			break
@@ -268,6 +275,7 @@ func (e *eventLoop) onReadable(s *socket) (err error) {
 
 		if rq.CallbackRequest {
 			rq.CmdCallback(rq.CallerCallback, respBuf, err)
+			// return request object to pool
 			pool.ReqPool.Put(rq)
 			continue
 		}

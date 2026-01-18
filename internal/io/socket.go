@@ -12,8 +12,6 @@ const (
 	defaultTimeout = time.Millisecond * 100
 	keepalive      = time.Second * 10
 
-	//defaultRingSize = 262144
-	defaultRingSize        = 8192
 	readBufferDefaultSize  = 1024 * 1024 * 1 // 1mb
 	writeBufferDefaultSize = 1024 * 1024 * 1
 )
@@ -22,7 +20,7 @@ type socket struct {
 	fd int
 
 	conn         *net.TCPConn
-	inflightRing *ring.MPSC[*types.Req]
+	inflightRing *ring.SPSC[*types.Req]
 
 	wantPollout bool
 
@@ -34,7 +32,7 @@ type socket struct {
 	writeBuffer []byte
 }
 
-func newSocket(addr string) (*socket, error) {
+func newSocket(addr string, ringSize int) (*socket, error) {
 	tcpCn, err := dial(addr)
 	if err != nil {
 		return nil, err
@@ -50,7 +48,7 @@ func newSocket(addr string) (*socket, error) {
 		conn:         tcpCn,
 		readBuffer:   make([]byte, readBufferDefaultSize),
 		writeBuffer:  make([]byte, writeBufferDefaultSize),
-		inflightRing: ring.NewMPSC[*types.Req](defaultRingSize),
+		inflightRing: ring.NewSPSC[*types.Req](ringSize),
 	}
 	return sock, sock.setOpts()
 }

@@ -16,12 +16,7 @@ const (
 var BufferPool = newBufferPool()
 
 type bufferPool struct {
-	xs  *sync.Pool
-	s   *sync.Pool
-	m   *sync.Pool
-	l   *sync.Pool
-	xl  *sync.Pool
-	xxl *sync.Pool
+	xs, s, m, l, xl, xxl *sync.Pool
 }
 
 func newBufferPool() *bufferPool {

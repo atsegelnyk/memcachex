@@ -1,8 +1,21 @@
 package ascii
 
-import "testing"
+import (
+	"github.com/atsegelnyk/memcachex/internal/pool"
+	"testing"
+)
 
-var sink []byte
+func BenchmarkEncodeGet(b *testing.B) {
+	key := []byte("key")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		buf := EncodeGet(key)
+		pool.BufferPool.Put(buf)
+	}
+}
 
 func BenchmarkEncodeSet_Small(b *testing.B) {
 	key := []byte("k")
@@ -12,7 +25,8 @@ func BenchmarkEncodeSet_Small(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		sink = EncodeSet(key, 0, 0, val)
+		buf := EncodeSet(key, 0, 0, val)
+		pool.BufferPool.Put(buf)
 	}
 }
 
@@ -24,7 +38,9 @@ func BenchmarkEncodeSet_Typical(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		sink = EncodeSet(key, 123, 60, val)
+		buf := EncodeSet(key, 123, 60, val)
+		pool.BufferPool.Put(buf)
+
 	}
 }
 
@@ -36,7 +52,9 @@ func BenchmarkEncodeSet_MediumValue(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		sink = EncodeSet(key, 1, 300, val)
+		buf := EncodeSet(key, 1, 300, val)
+		pool.BufferPool.Put(buf)
+
 	}
 }
 
@@ -48,6 +66,7 @@ func BenchmarkEncodeSet_LargeValue(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		sink = EncodeSet(key, 42, 3600, val)
+		buf := EncodeSet(key, 42, 3600, val)
+		pool.BufferPool.Put(buf)
 	}
 }

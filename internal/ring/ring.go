@@ -10,6 +10,8 @@ type mpscCell[T any] struct {
 	val T
 }
 
+// MPSC stays for multi-producer single-consumer ring buffer.
+// Concurrency-safe for push operations only.
 type MPSC[T any] struct {
 	mask uint64
 	buf  []mpscCell[T]
@@ -57,7 +59,7 @@ func (r *MPSC[T]) Push(v T) bool {
 			return false
 		}
 
-		// Another producer is working on this slot/position; backoff a bit.
+		// another producer is working on this slot/position; backoff a bit.
 		runtime.Gosched()
 	}
 }
@@ -81,5 +83,81 @@ func (r *MPSC[T]) Pop() (T, bool) {
 	cell.seq.Store(pos + ringSize)
 
 	r.head = pos + 1
+	return v, true
+}
+
+func (r *MPSC[T]) Peek() (T, bool) {
+	pos := r.head
+	cell := &r.buf[pos&r.mask]
+
+	seq := cell.seq.Load()
+	if seq != pos+1 {
+		var zero T
+		return zero, false
+	}
+
+	return cell.val, true
+}
+
+func (r *MPSC[T]) Discard() bool {
+	pos := r.head
+	cell := &r.buf[pos&r.mask]
+
+	seq := cell.seq.Load()
+	if seq != pos+1 {
+		return false
+	}
+
+	var zero T
+	cell.val = zero
+
+	ringSize := r.mask + 1
+	cell.seq.Store(pos + ringSize)
+
+	r.head = pos + 1
+	return true
+}
+
+// SPSC stays for single-producer single-consumer ring buffer.
+// Not concurrency-safe.
+type SPSC[T any] struct {
+	mask uint64
+	buf  []T
+
+	head uint64
+	tail uint64
+}
+
+func NewSPSC[T any](size int) *SPSC[T] {
+	if size <= 0 || size&(size-1) != 0 {
+		panic("ring size must be a power of 2")
+	}
+	return &SPSC[T]{
+		mask: uint64(size - 1),
+		buf:  make([]T, size),
+	}
+}
+
+func (r *SPSC[T]) CanPush() bool {
+	return (r.tail - r.head) != (r.mask + 1)
+}
+
+func (r *SPSC[T]) Push(v T) {
+	r.buf[r.tail&r.mask] = v
+	r.tail++
+}
+
+func (r *SPSC[T]) Pop() (T, bool) {
+	if r.head == r.tail {
+		var zero T
+		return zero, false
+	}
+	i := r.head & r.mask
+	v := r.buf[i]
+
+	var zero T
+	r.buf[i] = zero
+
+	r.head++
 	return v, true
 }

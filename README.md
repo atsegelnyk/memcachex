@@ -1,26 +1,33 @@
 # memcachex
 
-**memcachex** is a high-performance Memcached client for Go, built around an **event-loop I/O engine**, **async-first APIs**, and **explicit request management**.
+# memcachex
+
+`memcachex` is an **advanced Memcached client for Go**, built for systems where latency predictability, allocation behavior, and execution control are critical.
+
+At its core, `memcachex` uses a custom **event-loop–driven I/O engine** with async-first APIs and explicit request lifecycle management. 
+The design deliberately avoids goroutine-per-request patterns, hidden buffering, and implicit scheduling decisions in favor of transparent, measurable behavior under load.
 
 The library prioritizes:
 
-* predictable latency
-* almost zero allocations
-* explicit control over execution
-* avoiding goroutine-per-request designs
+- **Predictable latency**, especially at high concurrency
+- **Near-zero allocations** on the hot path
+- **Explicit control over execution and backpressure**
+- **Scalable concurrency** without per-request goroutines
 
-This is a **low-level client** intended for performance-critical use cases.
+`memcachex` is an **advanced client** intended for performance-sensitive and infrastructure-grade workloads. It favors explicitness and control while retaining a clear and usable API.
 
 ---
 
 ## Features
 
-* 🚀 Async-first API (callbacks, no goroutine per request)
-* ⚡ Event-loop based network engine
-* ♻️ Request and buffer pooling internally
-* 🧵 Optional OS-thread pinning
-* 📉 Designed for minimal allocations on hot paths
-* 🔁 Sync APIs built on top of the same async engine
+- 🚀 **Async-first API** — callback-based design with no goroutine per request
+- ⚡ **Event-loop–driven network engine** — explicit scheduling and predictable execution
+- ♻️ **Explicit request and buffer pooling** — minimizes allocations and GC pressure
+- 🧵 **Optional OS-thread pinning** — enables tighter latency control in specialized setups
+- 📉 **Allocation-aware hot paths** — designed to keep steady-state allocations near zero
+- 🔁 **Synchronous APIs built on the same async engine** — no duplicated code paths or behavior differences
+- ⛔ **Bounded internal queues** — backpressure is applied early instead of silently buffering
+- 📊 **Predictable behavior under load** — avoids latency cliffs caused by hidden buffering
 
 ---
 
@@ -37,20 +44,141 @@ go get github.com/atsegelnyk/memcachex
 ```go
 cl, err := memcachex.NewClient(
     memcachex.WithAddr("localhost:11211"),
-    memcachex.WithNumEventLoops(1),
 )
 if err != nil {
     panic(err)
 }
 ```
 
-### Options
+## Client configuration
+
+`memcachex` clients can be configured either via **functional options** or by passing a single **ClientOptions** struct.  
+Both approaches configure the same internal engine and are functionally equivalent.
+
+### Configure via functional options
 
 ```go
-memcachex.WithAddr("127.0.0.1:11211")
-memcachex.WithNumEventLoops(1)
-memcachex.WithLockOSThread(true)
+client, err := memcachex.NewClient(
+    memcachex.WithAddr("127.0.0.1:11211"),
+    memcachex.WithNumEventLoops(1),
+    memcachex.WithNumEventLoopSockets(2),
+    memcachex.WithRingSize(8192),
+    memcachex.WithNumEnqueueRetries(2),
+    memcachex.WithLockOSThread(false),
+)
 ```
+
+### Configure via `ClientOptions` struct
+
+```go
+opts := &memcachex.ClientOptions{
+    Addr:                "127.0.0.1:11211",
+    NumEventLoops:       1,
+    NumEventLoopSockets: 2,
+    RingSize:            8192,
+    NumEnqueueRetries:   2,
+    LockOSThread:        false,
+}
+
+client, err := memcachex.NewClient(
+    memcachex.WithOptions(opts),
+)
+```
+
+---
+
+## Options overview
+
+⚠️ **Note that:**
+
+**All default values are already tuned to be optimal for the vast majority of use cases. Most applications should work well without changing any configuration unless operating under specific, benchmarked constraints (for example high RTT or extreme concurrency).**
+
+### Address
+
+The Memcached server address the client connects to.
+
+* Default: `localhost:11211`
+
+---
+
+### Event loops
+
+Number of independent event loops used by the client.
+
+Each event loop:
+
+* runs in its own goroutine
+* owns its own set of sockets
+* has its own request ring buffer
+
+**Recommended values**
+
+* Use **1 event loop** for workloads up to ~**300k RPS**
+* Adding more event loops below this threshold usually adds overhead
+* Increase only if you are clearly CPU-bound and have validated it via benchmarks
+
+---
+
+### Connections per event loop
+
+Number of TCP connections created per event loop.
+
+**Guidelines**
+
+* Keep this value low
+* Typical: **2–4**
+
+All requests are pipelined internally, opening too many connections will increase contention and syscall overhead.
+
+---
+
+### Enqueue retries
+
+Number of retry attempts when an event loop is temporarily busy.
+
+Between retries, the goroutine yields via `runtime.Gosched()`.
+
+**Recommended values**
+
+* Optimal range: **1–3**
+* `0` → fail fast under contention
+* Higher values rarely help and may increase tail latency
+
+---
+
+### Locking OS threads
+
+Controls whether each event loop goroutine is pinned to its OS thread using `runtime.LockOSThread`.
+
+**Guidelines**
+
+* Disabled by default
+* Consider enabling only for controlled low-latency experiments
+* Always benchmark with and without it
+
+---
+
+### Ring buffer size
+
+Size of the request ring buffer used by each event loop.
+
+**Important constraint**
+
+* The ring size **MUST be a power of two**
+* Any other value will **panic at runtime**
+* Do not tune this unless you have a clear, measured need
+
+This requirement exists due to internal index masking and fast modulo operations.
+
+---
+
+## Summary
+
+* Prefer **1 event loop** unless proven otherwise
+* Keep **connections low**
+* Use **1–3 enqueue retries** for best balance
+* Benchmark every change
+
 
 ---
 
@@ -65,6 +193,19 @@ if err != nil {
 }
 
 fmt.Println(string(val.Value))
+```
+
+### GetMulti
+
+```go
+vals, err := cl.GetMulti([]byte("key1"), []byte("key2"))
+if err != nil {
+    return err
+}
+
+for _, val := range vals {
+    fmt.Println(string(val.Value))
+}
 ```
 
 ### Set
@@ -125,6 +266,22 @@ err := cl.GetAsync([]byte("key"), func(v any, err error) {
 })
 ```
 
+### Async GetMulti
+
+```go
+err := cl.GetMultiAsync(func(v any, err error) {
+    if err != nil {
+        return
+    }
+
+    vals := v.([]*proto.Value)
+    for _, val := range vals {
+        fmt.Println(string(val.Value))
+    }
+	
+}, []byte("key1"), []byte("key2"))
+```
+
 ### Async Set
 
 ```go
@@ -134,6 +291,16 @@ err := cl.SetAsync(&proto.Item{
 }, func(_ any, err error) {
     if err != nil {
         // handle error
+    }
+})
+```
+
+### Async Delete
+
+```go
+err := cl.DeleteAsync([]byte("key"), func(_ any, err error) {
+    if err != nil {
+    // handle error
     }
 })
 ```
@@ -155,11 +322,13 @@ err := cl.VersionAsync(func(v any, err error) {
 
 ## Sync ↔ Async Return Type Mapping
 
-| Command | Sync return type | Async `v` type |
-| ------- | ---------------- | -------------- |
-| Get     | `*proto.Value`   | `*proto.Value` |
-| Set     | `error`          | `nil`          |
-| Version | `[]byte`         | `[]byte`       |
+| Command  | Sync return type | Async `v` type   |
+|----------|------------------|------------------|
+| Get      | `*proto.Value`   | `*proto.Value`   |
+| GetMulti | `[]*proto.Value` | `[]*proto.Value` |
+| Set      | `error`          | `nil`            |
+| Delete   | `error`          | `nil`            |
+| Version  | `[]byte`         | `[]byte`         |
 
 ---
 
