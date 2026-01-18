@@ -1,7 +1,5 @@
 # memcachex
 
-# memcachex
-
 `memcachex` is an **advanced Memcached client for Go**, built for systems where latency predictability, allocation behavior, and execution control are critical.
 
 At its core, `memcachex` uses a custom **event-loop–driven I/O engine** with async-first APIs and explicit request lifecycle management. 
