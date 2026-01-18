@@ -1,8 +1,7 @@
 package proto
 
 import (
-	"errors"
-	errors2 "github.com/pkg/errors"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -17,6 +16,6 @@ var (
 )
 
 var (
-	ErrBusy              = errors2.New("engine busy")
-	ErrNoActiveEventLoop = errors2.New("no active event loop")
+	ErrBusy              = errors.New("engine busy")
+	ErrNoActiveEventLoop = errors.New("no active event loop")
 )
