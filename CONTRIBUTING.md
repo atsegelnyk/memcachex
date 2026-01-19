@@ -51,6 +51,7 @@ guidelines apply.
 
 If you’re unsure whether something is safe to run on the engine loop,
 please ask in an issue or PR — happy to help clarify.
+
 ---
 
 ## Protocol Status
