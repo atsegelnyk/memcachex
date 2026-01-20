@@ -1,6 +1,7 @@
 package io
 
 import (
+	"github.com/atsegelnyk/memcachex/internal/net"
 	"github.com/atsegelnyk/memcachex/internal/types"
 	"github.com/atsegelnyk/memcachex/proto"
 	"sync"
@@ -81,7 +82,7 @@ func (e *Engine) spinupEventLoop(id int) error {
 
 	e.eventLoops = append(e.eventLoops, el)
 	for i := 0; i < e.numEventLoopSockets; i++ {
-		sock, sockErr := newSocket(e.addr, e.ringSize)
+		sock, sockErr := net.NewSocket(e.addr, e.ringSize)
 		if sockErr != nil {
 			return sockErr
 		}
@@ -105,7 +106,7 @@ func (e *Engine) onEventLoopError(id int, err error) {
 }
 
 func (e *Engine) onEventLoopSocketError(id int, err error) {
-	newSock, err := newSocket(e.addr, e.ringSize)
+	newSock, err := net.NewSocket(e.addr, e.ringSize)
 	if err != nil {
 		return
 	}

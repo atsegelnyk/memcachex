@@ -1,0 +1,156 @@
+//go:build linux
+
+package netpoll
+
+import (
+	"github.com/atsegelnyk/memcachex/internal/net"
+	"golang.org/x/sys/unix"
+	"unsafe"
+)
+
+var (
+	u uint64 = 1
+	b        = (*(*[8]byte)(unsafe.Pointer(&u)))[:]
+)
+
+type Poller struct {
+	efd        int
+	eventFD    int
+	eventFDBuf []byte
+
+	nextSleepMsec int
+
+	events []unix.EpollEvent
+
+	onSocketReadable  func(*net.Socket)
+	onSocketWriteable func(*net.Socket)
+	onSocketError     func(*net.Socket, error)
+}
+
+func NewPoller(onSocketReadable, onSocketWriteable func(*net.Socket), onSocketError func(*net.Socket, error)) (p *Poller, err error) {
+	p = &Poller{
+		nextSleepMsec:     -1,
+		eventFDBuf:        make([]byte, 8),
+		events:            make([]unix.EpollEvent, 8),
+		onSocketReadable:  onSocketReadable,
+		onSocketWriteable: onSocketWriteable,
+		onSocketError:     onSocketError,
+	}
+
+	p.eventFD, err = unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+	if err != nil {
+		return
+	}
+
+	p.efd, err = unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+	if err != nil {
+		_ = unix.Close(p.eventFD)
+		return
+	}
+
+	err = unix.EpollCtl(p.efd, unix.EPOLL_CTL_ADD, p.eventFD, &unix.EpollEvent{
+		Fd:     int32(p.eventFD),
+		Events: ReadEvents,
+	})
+
+	if err != nil {
+		_ = unix.Close(p.eventFD)
+		_ = unix.Close(p.efd)
+	}
+	return
+}
+
+func (p *Poller) Wakeup() error {
+	_, err := unix.Write(p.eventFD, b)
+	if err == unix.EAGAIN {
+		_, _ = unix.Read(p.eventFD, p.eventFDBuf)
+		_, err = unix.Write(p.eventFD, b)
+	}
+	return err
+}
+
+func (p *Poller) Add(s *net.Socket) error {
+	event := setPointerDataToEpollEvent(s, ReadEvents)
+	return unix.EpollCtl(p.efd, unix.EPOLL_CTL_ADD, s.FD, event)
+}
+
+func (p *Poller) Mod(s *net.Socket) error {
+	if s.WantWrite {
+		event := setPointerDataToEpollEvent(s, ReadWriteEvents)
+		return unix.EpollCtl(p.efd, unix.EPOLL_CTL_MOD, s.FD, event)
+	}
+
+	event := setPointerDataToEpollEvent(s, ReadEvents)
+	return unix.EpollCtl(p.efd, unix.EPOLL_CTL_MOD, s.FD, event)
+}
+
+func (p *Poller) Delete(s *net.Socket) error {
+	return unix.EpollCtl(p.efd, unix.EPOLL_CTL_DEL, s.FD, nil)
+}
+
+func (p *Poller) Poll() error {
+	n, err := unix.EpollWait(p.efd, p.events, p.nextSleepMsec)
+	if n == 0 || (n < 0 && err == unix.EINTR) {
+		p.nextSleepMsec = -1
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	p.nextSleepMsec = 0
+
+	for i := 0; i < n; i++ {
+		ev := &p.events[i]
+
+		if fd := int(ev.Fd); fd == p.eventFD {
+			_, _ = unix.Read(p.eventFD, p.eventFDBuf)
+			continue
+		}
+
+		socket := getPointerDataFromEpollEvent(ev)
+
+		if ev.Events&(unix.EPOLLERR|unix.EPOLLHUP) != 0 {
+			p.onSocketError(socket, socketError(socket.FD))
+			continue
+		}
+
+		if ev.Events&unix.EPOLLIN != 0 {
+			p.onSocketReadable(socket)
+		}
+
+		if ev.Events&unix.EPOLLOUT != 0 {
+			p.onSocketWriteable(socket)
+		}
+
+	}
+
+	return nil
+}
+
+// setPointerDataToEpollEvent takes unsafe.Pointer of socket and stores it
+// in epoll_event.data. The socket object is kept alive by eventLoop.
+func setPointerDataToEpollEvent(s *net.Socket, ev uint32) *unix.EpollEvent {
+	event := &unix.EpollEvent{Events: ev}
+	token := uintptr(unsafe.Pointer(s))
+	event.Fd = int32(uint32(token))
+	event.Pad = int32(uint32(token >> 32))
+	return event
+}
+
+// getPointerDataFromEpollEvent reconstructs a Go pointer that was previously stored
+// in epoll_event.data. The socket object is kept alive by eventLoop.
+func getPointerDataFromEpollEvent(ev *unix.EpollEvent) *net.Socket {
+	t := uint64(uint32(ev.Fd)) | (uint64(uint32(ev.Pad)) << 32)
+	return (*net.Socket)(unsafe.Pointer(uintptr(t)))
+}
+
+func socketError(fd int) error {
+	nerr, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ERROR)
+	if err != nil {
+		return err
+	}
+	if nerr == 0 {
+		return nil
+	}
+	return unix.Errno(nerr)
+}

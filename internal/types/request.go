@@ -1,6 +1,8 @@
 package types
 
-import "github.com/atsegelnyk/memcachex/proto"
+import (
+	"github.com/atsegelnyk/memcachex/proto"
+)
 
 type Req struct {
 	Raw     []byte
@@ -8,8 +10,8 @@ type Req struct {
 
 	TS int64
 
-	CallbackRequest bool
-	Done            chan struct{}
+	NonBlocking bool
+	Done        chan struct{}
 
 	CallerCallback proto.CallerCallback
 	CmdCallback    func(proto.CallerCallback, []byte, error)

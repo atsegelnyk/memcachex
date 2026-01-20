@@ -1,4 +1,4 @@
-package io
+package net
 
 import (
 	"github.com/atsegelnyk/memcachex/internal/ring"
@@ -16,23 +16,25 @@ const (
 	writeBufferDefaultSize = 1024 * 1024 * 1
 )
 
-type socket struct {
-	fd int
+type Socket struct {
+	FD int
+	ID int
 
 	conn         *net.TCPConn
-	inflightRing *ring.SPSC[*types.Req]
+	InflightRing *ring.SPSC[*types.Req]
 
-	wantPollout bool
+	WantWrite bool
 
-	readOffset  int
-	rpos        int
-	wstart      int
-	wend        int
-	readBuffer  []byte
-	writeBuffer []byte
+	Wstart      int
+	Wend        int
+	WriteBuffer []byte
+
+	ReadOffset int
+	Rpos       int
+	ReadBuffer []byte
 }
 
-func newSocket(addr string, ringSize int) (*socket, error) {
+func NewSocket(addr string, ringSize int) (*Socket, error) {
 	tcpCn, err := dial(addr)
 	if err != nil {
 		return nil, err
@@ -43,12 +45,12 @@ func newSocket(addr string, ringSize int) (*socket, error) {
 		return nil, err
 	}
 
-	sock := &socket{
-		fd:           sfd,
+	sock := &Socket{
+		FD:           sfd,
 		conn:         tcpCn,
-		readBuffer:   make([]byte, readBufferDefaultSize),
-		writeBuffer:  make([]byte, writeBufferDefaultSize),
-		inflightRing: ring.NewSPSC[*types.Req](ringSize),
+		ReadBuffer:   make([]byte, readBufferDefaultSize),
+		WriteBuffer:  make([]byte, writeBufferDefaultSize),
+		InflightRing: ring.NewSPSC[*types.Req](ringSize),
 	}
 	return sock, sock.setOpts()
 }
@@ -80,18 +82,18 @@ func getSocketFd(tcpCn *net.TCPConn) (cfd int, err error) {
 	return
 }
 
-func (s *socket) setOpts() error {
-	err := unix.SetsockoptInt(s.fd, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+func (s *Socket) setOpts() error {
+	err := unix.SetsockoptInt(s.FD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
 	if err != nil {
 		return err
 	}
 
-	return unix.SetNonblock(s.fd, true)
+	return unix.SetNonblock(s.FD, true)
 }
 
-func (s *socket) read() error {
+func (s *Socket) Read() error {
 	for {
-		n, err := unix.Read(s.fd, s.readBuffer[s.readOffset:])
+		n, err := unix.Read(s.FD, s.ReadBuffer[s.ReadOffset:])
 		if err == unix.EAGAIN || err == unix.EWOULDBLOCK {
 			break
 		}
@@ -99,47 +101,40 @@ func (s *socket) read() error {
 			return err
 		}
 
-		s.readOffset += n
+		s.ReadOffset += n
 	}
 	return nil
 }
 
-func (s *socket) write(b []byte) bool {
-	if len(b)+s.wend > len(s.writeBuffer) {
+func (s *Socket) Write(b []byte) bool {
+	if len(b)+s.Wend > len(s.WriteBuffer) {
 		return false
 	}
 
-	copy(s.writeBuffer[s.wend:], b)
-	s.wend += len(b)
-	s.wantPollout = true
+	copy(s.WriteBuffer[s.Wend:], b)
+	s.Wend += len(b)
+	s.WantWrite = true
 	return true
 }
 
-func (s *socket) flush() error {
-	for s.wstart < s.wend {
-		n, err := unix.Write(s.fd, s.writeBuffer[s.wstart:s.wend])
+func (s *Socket) Flush() error {
+	for s.Wstart < s.Wend {
+		n, err := unix.Write(s.FD, s.WriteBuffer[s.Wstart:s.Wend])
 		if err == unix.EAGAIN || err == unix.EWOULDBLOCK {
-			s.wantPollout = true
+			s.WantWrite = true
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		s.wstart += n
+		s.Wstart += n
 	}
 
-	s.wstart, s.wend = 0, 0
-	s.wantPollout = false
+	s.Wstart, s.Wend = 0, 0
+	s.WantWrite = false
 	return nil
 }
 
-func (s *socket) socketError() error {
-	nerr, err := unix.GetsockoptInt(s.fd, unix.SOL_SOCKET, unix.SO_ERROR)
-	if err != nil {
-		return err
-	}
-	if nerr == 0 {
-		return nil
-	}
-	return unix.Errno(nerr)
+func (s *Socket) Close() {
+	_ = s.conn.Close()
 }

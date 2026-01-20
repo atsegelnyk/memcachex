@@ -176,7 +176,7 @@ func (c *Client) GetAsync(key []byte, callerCb proto.CallerCallback) error {
 	req.Raw = raw
 	req.CmdCallback = getCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -238,7 +238,7 @@ func (c *Client) GetMultiAsync(callerCb proto.CallerCallback, keys ...[]byte) er
 	req.Raw = raw
 	req.CmdCallback = getMuliCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -279,7 +279,7 @@ func (c *Client) SetAsync(it *proto.Item, callerCb proto.CallerCallback) error {
 	req.Raw = raw
 	req.CmdCallback = setCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -320,7 +320,7 @@ func (c *Client) DeleteAsync(key []byte, callerCb proto.CallerCallback) error {
 	req.Raw = raw
 	req.CmdCallback = deleteCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -362,7 +362,7 @@ func (c *Client) VersionAsync(callerCb proto.CallerCallback) error {
 	req.Raw = raw
 	req.CmdCallback = versionCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -389,7 +389,7 @@ func (c *Client) roundTrip(raw []byte) (resp []byte, err error) {
 
 	req.Raw = raw
 	req.TS = time.Now().Unix()
-	req.CallbackRequest = false
+	req.NonBlocking = false
 
 	err = c.enqueueRequest(req)
 	if err != nil {
