@@ -15,6 +15,7 @@ const (
 	defaultNumEventLoops       = 1
 	defaultNumEventLoopSockets = 2
 	defaultRingSize            = 8192
+	defaultSocketIOBatch       = 1024
 	defaultAddr                = "localhost:11211"
 	defaultNumEnqueueRetries   = 1
 )
@@ -33,6 +34,7 @@ type ClientOptions struct {
 	NumEventLoops       int
 	NumEventLoopSockets int
 	RingSize            int
+	SocketIOBatch       int
 
 	NumEnqueueRetries int
 }
@@ -47,6 +49,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 			LockOSThread:        defaultLockOSThread,
 			NumEventLoopSockets: defaultNumEventLoopSockets,
 			RingSize:            defaultRingSize,
+			SocketIOBatch:       defaultSocketIOBatch,
 			NumEnqueueRetries:   defaultNumEnqueueRetries,
 		},
 	}
@@ -62,6 +65,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		c.opts.NumEventLoops,
 		c.opts.NumEventLoopSockets,
 		c.opts.RingSize,
+		c.opts.SocketIOBatch,
 		c.opts.LockOSThread,
 	)
 	if err != nil {
@@ -116,6 +120,15 @@ func WithAddr(addr string) ClientOption {
 func WithRingSize(size int) ClientOption {
 	return func(c *Client) {
 		c.opts.RingSize = size
+	}
+}
+
+// WithSocketIOBatch sets max number of IO operations made for any socket in one eventLoop iteration.
+//
+// Defaults to 8192
+func WithSocketIOBatch(batch int) ClientOption {
+	return func(c *Client) {
+		c.opts.SocketIOBatch = batch
 	}
 }
 

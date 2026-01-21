@@ -13,16 +13,24 @@ type Engine struct {
 	numEventLoops       int
 	numEventLoopSockets int
 	ringSize            int
+	socketIOBatch       int
 	lockOSThread        bool
 
 	rrCounter        uint32
-	curNumEventLoops int
+	curNumEventLoops uint32
 
 	mu         sync.Mutex
 	eventLoops []*eventLoop
 }
 
-func NewEngine(addr string, numEventLoops, numEventLoopSockets, ringSize int, lockOSThread bool) (*Engine, error) {
+func NewEngine(
+	addr string,
+	numEventLoops,
+	numEventLoopSockets,
+	ringSize,
+	socketIOBatch int,
+	lockOSThread bool,
+) (*Engine, error) {
 	e := &Engine{
 		addr:                addr,
 		mu:                  sync.Mutex{},
@@ -30,6 +38,7 @@ func NewEngine(addr string, numEventLoops, numEventLoopSockets, ringSize int, lo
 		numEventLoopSockets: numEventLoopSockets,
 		lockOSThread:        lockOSThread,
 		ringSize:            ringSize,
+		socketIOBatch:       socketIOBatch,
 	}
 
 	for i := 0; i < numEventLoops; i++ {
@@ -51,14 +60,13 @@ func (e *Engine) Enqueue(req *types.Req) error {
 }
 
 func (e *Engine) enqueue(rq *types.Req) error {
-	n := uint32(len(e.eventLoops))
-	if n == 0 {
+	if e.curNumEventLoops == 0 {
 		return proto.ErrBusy
 	}
 
-	for i := 0; i < e.curNumEventLoops; i++ {
+	for i := 0; i < int(e.curNumEventLoops); i++ {
 		idx := atomic.AddUint32(&e.rrCounter, 1) - 1
-		el := e.eventLoops[idx%n]
+		el := e.eventLoops[idx%e.curNumEventLoops]
 		if el.enqueue(rq) {
 			return nil
 		}
@@ -71,6 +79,7 @@ func (e *Engine) spinupEventLoop(id int) error {
 	el, err := newEventLoop(
 		id,
 		e.ringSize,
+		e.socketIOBatch,
 		e.lockOSThread,
 		e.onEventLoopError,
 		e.onEventLoopSocketError,

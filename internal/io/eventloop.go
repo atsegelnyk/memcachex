@@ -10,6 +10,7 @@ import (
 	"github.com/atsegelnyk/memcachex/internal/types"
 	"github.com/pkg/errors"
 	"runtime"
+	"sync/atomic"
 )
 
 var (
@@ -18,13 +19,14 @@ var (
 )
 
 type eventLoop struct {
-	id           int
-	maxIOBatch   int
-	lockOSThread bool
+	id            int
+	socketIOBatch int
+	lockOSThread  bool
 
 	ready bool
 
-	sockets []*net.Socket
+	socketRRCounter uint32
+	sockets         []*net.Socket
 
 	requestRing *ring.MPSC[*types.Req]
 
@@ -34,11 +36,11 @@ type eventLoop struct {
 	onSocketErrorHook func(int, error)
 }
 
-func newEventLoop(id, ringSize int, lockOSThread bool, onError, onSocketError func(int, error)) (*eventLoop, error) {
+func newEventLoop(id, ringSize, socketIOBatch int, lockOSThread bool, onError, onSocketError func(int, error)) (*eventLoop, error) {
 	e := &eventLoop{
 		id:                id,
 		lockOSThread:      lockOSThread,
-		maxIOBatch:        ringSize,
+		socketIOBatch:     socketIOBatch,
 		requestRing:       ring.NewMPSC[*types.Req](ringSize),
 		onErrorHook:       onError,
 		onSocketErrorHook: onSocketError,
@@ -99,7 +101,11 @@ func (e *eventLoop) eventLoop() {
 
 	e.ready = true
 	for e.ready {
-		for _, s := range e.sockets {
+		n := uint32(len(e.sockets))
+		for i := 0; i < len(e.sockets); i++ {
+			idx := atomic.AddUint32(&e.socketRRCounter, 1) - 1
+			s := e.sockets[idx%n]
+
 			e.dispatchRequests(s)
 			err := e.poller.Mod(s)
 			if err != nil {
@@ -117,7 +123,7 @@ func (e *eventLoop) eventLoop() {
 }
 
 func (e *eventLoop) dispatchRequests(s *net.Socket) {
-	for i := 0; i < e.maxIOBatch; i++ {
+	for i := 0; i < e.socketIOBatch; i++ {
 		if !s.InflightRing.CanPush() {
 			return
 		}
@@ -152,7 +158,7 @@ func (e *eventLoop) onWriteable(s *net.Socket) {
 func (e *eventLoop) onReadable(s *net.Socket) {
 	err := s.Read()
 
-	for i := 0; i < e.maxIOBatch; i++ {
+	for i := 0; i < e.socketIOBatch; i++ {
 		n := ascii.DecodeResponseLen(s.ReadBuffer[s.Rpos:s.ReadOffset])
 		if n == 0 {
 			break
