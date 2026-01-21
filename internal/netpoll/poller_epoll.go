@@ -26,10 +26,10 @@ type Poller struct {
 
 	onSocketReadable  func(*net.Socket)
 	onSocketWriteable func(*net.Socket)
-	onSocketError     func(*net.Socket, error)
+	onSocketError     func(*net.Socket)
 }
 
-func NewPoller(onSocketReadable, onSocketWriteable func(*net.Socket), onSocketError func(*net.Socket, error)) (p *Poller, err error) {
+func NewPoller(onSocketReadable, onSocketWriteable, onSocketError func(*net.Socket)) (p *Poller, err error) {
 	p = &Poller{
 		nextSleepMsec:     -1,
 		eventFDBuf:        make([]byte, 8),
@@ -103,6 +103,7 @@ func (p *Poller) Delete(s *net.Socket) error {
 func (p *Poller) Poll() error {
 	n, err := unix.EpollWait(p.efd, p.events, p.nextSleepMsec)
 	if n == 0 || (n < 0 && err == unix.EINTR) {
+		atomic.StoreInt32(&p.wakeupCall, 0)
 		p.nextSleepMsec = -1
 		return nil
 	} else if err != nil {
@@ -123,7 +124,7 @@ func (p *Poller) Poll() error {
 		socket := getPointerDataFromEpollEvent(ev)
 
 		if ev.Events&(unix.EPOLLERR|unix.EPOLLHUP) != 0 {
-			p.onSocketError(socket, socketError(socket.FD))
+			p.onSocketError(socket)
 			continue
 		}
 
@@ -138,32 +139,4 @@ func (p *Poller) Poll() error {
 	}
 
 	return nil
-}
-
-// setPointerDataToEpollEvent takes unsafe.Pointer of socket and stores it
-// in epoll_event.data. The socket object is kept alive by eventLoop.
-func setPointerDataToEpollEvent(s *net.Socket, ev uint32) *unix.EpollEvent {
-	event := &unix.EpollEvent{Events: ev}
-	token := uintptr(unsafe.Pointer(s))
-	event.Fd = int32(uint32(token))
-	event.Pad = int32(uint32(token >> 32))
-	return event
-}
-
-// getPointerDataFromEpollEvent reconstructs a Go pointer that was previously stored
-// in epoll_event.data. The socket object is kept alive by eventLoop.
-func getPointerDataFromEpollEvent(ev *unix.EpollEvent) *net.Socket {
-	t := uint64(uint32(ev.Fd)) | (uint64(uint32(ev.Pad)) << 32)
-	return (*net.Socket)(unsafe.Pointer(uintptr(t)))
-}
-
-func socketError(fd int) error {
-	nerr, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ERROR)
-	if err != nil {
-		return err
-	}
-	if nerr == 0 {
-		return nil
-	}
-	return unix.Errno(nerr)
 }

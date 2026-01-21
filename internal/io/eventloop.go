@@ -1,7 +1,6 @@
 package io
 
 import (
-	"fmt"
 	"github.com/atsegelnyk/memcachex/internal/net"
 	"github.com/atsegelnyk/memcachex/internal/netpoll"
 	"github.com/atsegelnyk/memcachex/internal/pool"
@@ -9,6 +8,7 @@ import (
 	"github.com/atsegelnyk/memcachex/internal/ring"
 	"github.com/atsegelnyk/memcachex/internal/types"
 	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 	"runtime"
 	"sync/atomic"
 )
@@ -151,7 +151,7 @@ func (e *eventLoop) dispatchRequests(s *net.Socket) {
 func (e *eventLoop) onWriteable(s *net.Socket) {
 	err := s.Flush()
 	if err != nil {
-		e.onSocketErr(s, err)
+		e.onSocketErr(s)
 	}
 }
 
@@ -171,7 +171,7 @@ func (e *eventLoop) onReadable(s *net.Socket) {
 		rq, ok := s.InflightRing.Pop()
 
 		if !ok {
-			e.onSocketErr(s, ErrEmptyRing)
+			e.onSocketErr(s)
 			return
 		}
 
@@ -197,9 +197,7 @@ func (e *eventLoop) onReadable(s *net.Socket) {
 	return
 }
 
-func (e *eventLoop) onSocketErr(s *net.Socket, err error) {
-	fmt.Println("onSocketErr", s.ID, err)
-
+func (e *eventLoop) onSocketErr(s *net.Socket) {
 	e.sockets = append(e.sockets[:s.ID], e.sockets[s.ID+1:]...)
 	if len(e.sockets) == 0 {
 		e.ready = false
@@ -208,5 +206,17 @@ func (e *eventLoop) onSocketErr(s *net.Socket, err error) {
 	}
 
 	s.Close()
+	err := getSocketError(s.FD)
 	e.onSocketErrorHook(e.id, err)
+}
+
+func getSocketError(fd int) error {
+	nerr, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ERROR)
+	if err != nil {
+		return err
+	}
+	if nerr == 0 {
+		return nil
+	}
+	return unix.Errno(nerr)
 }
