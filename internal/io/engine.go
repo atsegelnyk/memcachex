@@ -75,6 +75,12 @@ func (e *Engine) enqueue(rq *types.Req) error {
 	return proto.ErrBusy
 }
 
+func (e *Engine) Stop() {
+	for _, el := range e.eventLoops {
+		el.stop()
+	}
+}
+
 func (e *Engine) spinupEventLoop(id int) error {
 	el, err := newEventLoop(
 		id,
@@ -95,7 +101,11 @@ func (e *Engine) spinupEventLoop(id int) error {
 		if sockErr != nil {
 			return sockErr
 		}
-		el.enrollSocket(sock)
+
+		err = el.enrollSocket(sock)
+		if err != nil {
+			return err
+		}
 	}
 
 	el.start()
@@ -104,12 +114,11 @@ func (e *Engine) spinupEventLoop(id int) error {
 }
 
 func (e *Engine) onEventLoopError(id int, err error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	err = e.spinupEventLoop(id)
 	if err != nil {
+		e.mu.Lock()
 		e.eventLoops = append(e.eventLoops[:id], e.eventLoops[id+1:]...)
+		e.mu.Unlock()
 		e.curNumEventLoops--
 	}
 }
@@ -119,5 +128,7 @@ func (e *Engine) onEventLoopSocketError(id int, err error) {
 	if err != nil {
 		return
 	}
-	e.eventLoops[id].enrollSocket(newSock)
+
+	_ = e.eventLoops[id].enrollSocket(newSock)
+	return
 }

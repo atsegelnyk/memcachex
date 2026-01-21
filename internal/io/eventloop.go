@@ -15,7 +15,6 @@ import (
 
 var (
 	ErrNoOpenSockets = errors.New("no open sockets available")
-	ErrEmptyRing     = errors.New("empty ring")
 )
 
 type eventLoop struct {
@@ -92,6 +91,18 @@ func (e *eventLoop) enqueue(req *types.Req) bool {
 func (e *eventLoop) start() {
 	e.ready = true
 	go e.eventLoop()
+}
+
+func (e *eventLoop) stop() {
+	e.ready = false
+	e.poller.Close()
+
+	for _, socket := range e.sockets {
+		socket.Close()
+	}
+
+	e.sockets = nil
+	e.poller = nil
 }
 
 func (e *eventLoop) eventLoop() {
@@ -206,6 +217,8 @@ func (e *eventLoop) onSocketErr(s *net.Socket) {
 	}
 
 	s.Close()
+	_ = e.poller.Delete(s)
+
 	err := getSocketError(s.FD)
 	e.onSocketErrorHook(e.id, err)
 }

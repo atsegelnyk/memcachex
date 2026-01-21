@@ -48,6 +48,10 @@ func NewPoller(onSocketReadable, onSocketWriteable, onSocketError func(*net.Sock
 	return
 }
 
+func (p *Poller) Close() {
+	_ = unix.Close(p.fd)
+}
+
 func (p *Poller) Wakeup() (err error) {
 	if atomic.CompareAndSwapInt32(&p.wakeupCall, 0, 1) {
 		for {

@@ -149,6 +149,11 @@ func WithNumEnqueueRetries(numRetries int) ClientOption {
 	}
 }
 
+// Close closes the client.
+func (c *Client) Close() {
+	c.engine.Stop()
+}
+
 // Get fetches a value for the given key using the Memcached "get" command.
 //
 // It encodes a request, performs a synchronous round trip to the server,
