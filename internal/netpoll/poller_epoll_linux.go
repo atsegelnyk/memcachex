@@ -5,6 +5,7 @@ package netpoll
 import (
 	"github.com/atsegelnyk/memcachex/internal/net"
 	"golang.org/x/sys/unix"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -19,6 +20,7 @@ type Poller struct {
 	eventFDBuf []byte
 
 	nextSleepMsec int
+	wakeupCall    int32
 
 	events []unix.EpollEvent
 
@@ -60,11 +62,13 @@ func NewPoller(onSocketReadable, onSocketWriteable func(*net.Socket), onSocketEr
 	return
 }
 
-func (p *Poller) Wakeup() error {
-	_, err := unix.Write(p.eventFD, b)
-	if err == unix.EAGAIN {
-		_, _ = unix.Read(p.eventFD, p.eventFDBuf)
+func (p *Poller) Wakeup() (err error) {
+	if atomic.CompareAndSwapInt32(&p.wakeupCall, 0, 1) {
 		_, err = unix.Write(p.eventFD, b)
+		if err == unix.EAGAIN {
+			_, _ = unix.Read(p.eventFD, p.eventFDBuf)
+			_, err = unix.Write(p.eventFD, b)
+		}
 	}
 	return err
 }
@@ -106,6 +110,7 @@ func (p *Poller) Poll() error {
 	}
 
 	p.nextSleepMsec = 0
+	atomic.StoreInt32(&p.wakeupCall, 0)
 
 	for i := 0; i < n; i++ {
 		ev := &p.events[i]
