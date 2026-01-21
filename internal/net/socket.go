@@ -23,7 +23,8 @@ type Socket struct {
 	conn         *net.TCPConn
 	InflightRing *ring.SPSC[*types.Req]
 
-	WantWrite bool
+	WantWrite            bool
+	PollerWantWriteState bool
 
 	Wstart      int
 	Wend        int
@@ -121,7 +122,6 @@ func (s *Socket) Flush() error {
 	for s.Wstart < s.Wend {
 		n, err := unix.Write(s.FD, s.WriteBuffer[s.Wstart:s.Wend])
 		if err == unix.EAGAIN || err == unix.EWOULDBLOCK {
-			s.WantWrite = true
 			return nil
 		}
 		if err != nil {

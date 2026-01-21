@@ -76,10 +76,18 @@ func (p *Poller) Add(s *net.Socket) error {
 
 func (p *Poller) Mod(s *net.Socket) error {
 	if s.WantWrite {
+		if s.PollerWantWriteState {
+			return nil
+		}
+		s.PollerWantWriteState = true
 		event := setPointerDataToEpollEvent(s, ReadWriteEvents)
 		return unix.EpollCtl(p.efd, unix.EPOLL_CTL_MOD, s.FD, event)
 	}
 
+	if !s.PollerWantWriteState {
+		return nil
+	}
+	s.PollerWantWriteState = false
 	event := setPointerDataToEpollEvent(s, ReadEvents)
 	return unix.EpollCtl(p.efd, unix.EPOLL_CTL_MOD, s.FD, event)
 }
