@@ -15,6 +15,7 @@ const (
 	defaultNumEventLoops       = 1
 	defaultNumEventLoopSockets = 2
 	defaultRingSize            = 8192
+	defaultSocketIOBatch       = 1024
 	defaultAddr                = "localhost:11211"
 	defaultNumEnqueueRetries   = 1
 )
@@ -33,6 +34,7 @@ type ClientOptions struct {
 	NumEventLoops       int
 	NumEventLoopSockets int
 	RingSize            int
+	SocketIOBatch       int
 
 	NumEnqueueRetries int
 }
@@ -47,6 +49,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 			LockOSThread:        defaultLockOSThread,
 			NumEventLoopSockets: defaultNumEventLoopSockets,
 			RingSize:            defaultRingSize,
+			SocketIOBatch:       defaultSocketIOBatch,
 			NumEnqueueRetries:   defaultNumEnqueueRetries,
 		},
 	}
@@ -62,6 +65,7 @@ func NewClient(opts ...ClientOption) (*Client, error) {
 		c.opts.NumEventLoops,
 		c.opts.NumEventLoopSockets,
 		c.opts.RingSize,
+		c.opts.SocketIOBatch,
 		c.opts.LockOSThread,
 	)
 	if err != nil {
@@ -116,6 +120,15 @@ func WithAddr(addr string) ClientOption {
 func WithRingSize(size int) ClientOption {
 	return func(c *Client) {
 		c.opts.RingSize = size
+	}
+}
+
+// WithSocketIOBatch sets max number of IO operations made for any socket in one eventLoop iteration.
+//
+// Defaults to 8192
+func WithSocketIOBatch(batch int) ClientOption {
+	return func(c *Client) {
+		c.opts.SocketIOBatch = batch
 	}
 }
 
@@ -176,7 +189,7 @@ func (c *Client) GetAsync(key []byte, callerCb proto.CallerCallback) error {
 	req.Raw = raw
 	req.CmdCallback = getCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -238,7 +251,7 @@ func (c *Client) GetMultiAsync(callerCb proto.CallerCallback, keys ...[]byte) er
 	req.Raw = raw
 	req.CmdCallback = getMuliCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -279,7 +292,7 @@ func (c *Client) SetAsync(it *proto.Item, callerCb proto.CallerCallback) error {
 	req.Raw = raw
 	req.CmdCallback = setCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -320,7 +333,7 @@ func (c *Client) DeleteAsync(key []byte, callerCb proto.CallerCallback) error {
 	req.Raw = raw
 	req.CmdCallback = deleteCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -362,7 +375,7 @@ func (c *Client) VersionAsync(callerCb proto.CallerCallback) error {
 	req.Raw = raw
 	req.CmdCallback = versionCallback
 	req.CallerCallback = callerCb
-	req.CallbackRequest = true
+	req.NonBlocking = true
 	req.TS = time.Now().Unix()
 
 	return c.enqueueRequest(req)
@@ -389,7 +402,7 @@ func (c *Client) roundTrip(raw []byte) (resp []byte, err error) {
 
 	req.Raw = raw
 	req.TS = time.Now().Unix()
-	req.CallbackRequest = false
+	req.NonBlocking = false
 
 	err = c.enqueueRequest(req)
 	if err != nil {
