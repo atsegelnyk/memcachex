@@ -1,0 +1,148 @@
+version: '3.8'
+
+services:
+  ### memcached container for local testing ###
+  memcache:
+    image: memcached:alpine
+    container_name: memcache
+    ports:
+      - "11211:11211"
+    restart: always
+    command: >
+      memcached -u root
+      -m 10240
+      -o modern,lru_crawler,lru_maintainer,slab_reassign
+      -t 4
+
+  ### memcachex standard ###
+  bench-memcachex-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLIENT: memcachex
+        OS: linux
+    image: bench-memcachex
+    command: >
+      /bench
+      -addr 10.230.0.13:11211
+      -workers 10
+      -ops 100000
+      -value-len 256
+      -static
+
+  bench-memcachex-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLIENT: memcachex
+        OS: linux
+    image: bench-memcachex
+    command: >
+      /bench
+      -addr 10.230.0.13:11211
+      -workers 100
+      -ops 50000
+      -value-len 256
+      -static
+
+  bench-memcachex-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLIENT: memcachex
+        OS: linux
+    image: bench-memcachex
+    command: >
+      /bench
+      -addr 10.230.0.13:11211
+      -workers 500
+      -ops 10000
+      -value-len 256
+      -static
+
+  ### gomemcache standard ###
+  bench-gomemcache-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLIENT: gomemcache
+        OS: linux
+    image: bench-gomemcache
+    command: >
+      /bench
+      -addr 10.230.0.13:11211
+      -workers 10
+      -ops 100000
+      -value-len 256
+      -static
+
+  bench-gomemcache-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLIENT: gomemcache
+        OS: linux
+    image: bench-gomemcache
+    command: >
+      /bench
+      -addr 10.230.0.13:11211
+      -workers 100
+      -ops 50000
+      -value-len 256
+      -static
+
+  bench-gomemcache-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLIENT: gomemcache
+        OS: linux
+    image: bench-gomemcache
+    command: >
+      /bench
+      -addr 10.230.0.13:11211
+      -workers 500
+      -ops 10000
+      -value-len 256
+      -static
+
+  ### memcachex pipelined ###
+  bench-memcachex-pipelined-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLIENT: memcachex
+        OS: linux
+    image: bench-memcachex
+    command: >
+      /bench
+      -addr 10.230.0.13:11211
+      -workers 2
+      -ops 1000000
+      -value-len 256
+      -pipeline 1024
+      -static
+
+  bench-memcachex-pipelined-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLIENT: memcachex
+        OS: linux
+    image: bench-memcachex
+    command: >
+      /bench
+      -addr 10.230.0.13:11211
+      -workers 10
+      -ops 1000000
+      -value-len 256
+      -pipeline 256
+      -static
