@@ -25,7 +25,7 @@ services:
     image: bench-memcachex
     command: >
       /bench
-      -addr 10.230.0.13:11211
+      -addr memcache:11211
       -workers 10
       -ops 100000
       -value-len 256
@@ -41,7 +41,7 @@ services:
     image: bench-memcachex
     command: >
       /bench
-      -addr 10.230.0.13:11211
+      -addr memcache:11211
       -workers 100
       -ops 50000
       -value-len 256
@@ -57,7 +57,7 @@ services:
     image: bench-memcachex
     command: >
       /bench
-      -addr 10.230.0.13:11211
+      -addr memcache:11211
       -workers 500
       -ops 10000
       -value-len 256
@@ -74,7 +74,7 @@ services:
     image: bench-gomemcache
     command: >
       /bench
-      -addr 10.230.0.13:11211
+      -addr memcache:11211
       -workers 10
       -ops 100000
       -value-len 256
@@ -90,7 +90,7 @@ services:
     image: bench-gomemcache
     command: >
       /bench
-      -addr 10.230.0.13:11211
+      -addr memcache:11211
       -workers 100
       -ops 50000
       -value-len 256
@@ -106,7 +106,7 @@ services:
     image: bench-gomemcache
     command: >
       /bench
-      -addr 10.230.0.13:11211
+      -addr memcache:11211
       -workers 500
       -ops 10000
       -value-len 256
@@ -123,7 +123,7 @@ services:
     image: bench-memcachex
     command: >
       /bench
-      -addr 10.230.0.13:11211
+      -addr memcache:11211
       -workers 2
       -ops 1000000
       -value-len 256
@@ -140,7 +140,7 @@ services:
     image: bench-memcachex
     command: >
       /bench
-      -addr 10.230.0.13:11211
+      -addr memcache:11211
       -workers 10
       -ops 1000000
       -value-len 256
